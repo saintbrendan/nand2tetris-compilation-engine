@@ -44,23 +44,23 @@ public class JackTokenizer {
         return stringVal;
     }
 
-    public TokenType getTokenType() {
+    public TokenType tokenType() {
         return tokenType;
     }
 
-    public long getIntVal() {
+    public long intVal() {
         return intVal;
     }
 
-    public String getKeyword() {
+    public String keyword() {
         return keyword;
     }
 
-    public String getIdentifier() {
+    public String identifier() {
         return identifier;
     }
 
-    public char getSymbol() {
+    public char symbol() {
         return symbol;
     }
 
