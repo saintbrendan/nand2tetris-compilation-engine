@@ -12,17 +12,17 @@ public class JackTokenizer {
     private StreamTokenizer tokenizer;
     private TokenType tokenType;
     private long intVal;
-    private String keyword;
+    private KeyWord keyword;
     private String identifier;
     private char symbol;
     private String stringVal;
 
     public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\";
     ///public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\SquareGame.jack";
-    ////public static String fileName = "C:\\Users\\saint\\OneDrive\\Documents\\nand2tetris\\projects\\10\\Square\\SquareGame.jack";
     ////public static String fileName = "C:\\Users\\saint\\OneDrive\\Documents\\testtext.txt";
 
     private static final Map<TokenType, String> xmlFromType;
+
     static {
         Map<TokenType, String> map = new HashMap<>();
         map.put(TokenType.KEYWORD, "keyword");
@@ -33,14 +33,16 @@ public class JackTokenizer {
         xmlFromType = Collections.unmodifiableMap(map);
     }
 
-
+    public void pushBack() {
+        tokenizer.pushBack();
+    }
 
     public JackTokenizer(File file) throws FileNotFoundException {
         Reader reader = new FileReader(file);
         this.tokenizer = tokenizerFromReader(reader);
     }
 
-    public String getStringVal() {
+    public String stringVal() {
         return stringVal;
     }
 
@@ -52,7 +54,7 @@ public class JackTokenizer {
         return intVal;
     }
 
-    public String keyword() {
+    public KeyWord keyWord() {
         return keyword;
     }
 
@@ -62,14 +64,6 @@ public class JackTokenizer {
 
     public char symbol() {
         return symbol;
-    }
-
-    public static enum TokenType {
-        KEYWORD,
-        SYMBOL,
-        IDENTIFIER,
-        INT_CONST,
-        STRING_CONST
     }
 
     public static void main(String[] args) throws IOException {
@@ -86,7 +80,7 @@ public class JackTokenizer {
 
     private static void tokenizeDirectory(File directory) throws IOException {
         File[] filesx = DirUtil.getFilesFromDir(directory, "jack");
-        for (File file: DirUtil.getFilesFromDir(directory, "jack")) {
+        for (File file : DirUtil.getFilesFromDir(directory, "jack")) {
             tokenizeFile(file.getAbsolutePath());
         }
     }
@@ -96,7 +90,7 @@ public class JackTokenizer {
         String outputFileName = DirUtil.stripExtension(fileName) + "T.xml";
         File file = new File(fileName);
         JackTokenizer jackTokenizer = new JackTokenizer(file);
-        System.out.println("about to write to "+outputFileName);
+        System.out.println("about to write to " + outputFileName);
         PrintStream printStream = new PrintStream(outputFileName);
         printStream.println("<tokens>");
         while (jackTokenizer.hasMoreTokens()) {
@@ -125,7 +119,7 @@ public class JackTokenizer {
             case StreamTokenizer.TT_WORD:
                 if (KEYWORDS.contains(tokenizer.sval)) {
                     tokenType = TokenType.KEYWORD;
-                    keyword = tokenizer.sval;
+                    keyword = KeyWord.valueOf(tokenizer.sval.toUpperCase());
                 } else {
                     tokenType = TokenType.IDENTIFIER;
                     identifier = tokenizer.sval;
@@ -138,14 +132,24 @@ public class JackTokenizer {
                 break;
             default:
                 tokenType = TokenType.SYMBOL;
-                symbol = (char)tokenizer.ttype;
+                symbol = (char) tokenizer.ttype;
                 stringVal = Character.toString(symbol);
         }
     }
 
     public String toXml() {
         String xmlElement = xmlFromType.get(tokenType);
-        return "<" + xmlElement + "> " + stringVal + " </" + xmlElement + ">";
+        String xmlString = stringVal;
+        if (tokenType == TokenType.SYMBOL) {
+            if (symbol == '>') {
+                xmlString = "&gt;";
+            } else if (symbol == '<') {
+                xmlString = "&lt;";
+            } else if (symbol == '&') {
+                xmlString = "&amp;";
+            }
+        }
+        return "<" + xmlElement + "> " + xmlString + " </" + xmlElement + ">";
     }
 
     public static StreamTokenizer tokenizerFromReader(Reader reader) {
