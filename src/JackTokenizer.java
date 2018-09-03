@@ -86,7 +86,6 @@ public class JackTokenizer {
     }
 
     private static void tokenizeFile(String fileName) throws IOException {
-        ////String outputFileName = fileName.split("\\.")[0] + "T.xml";
         String outputFileName = DirUtil.stripExtension(fileName) + "T.xml";
         File file = new File(fileName);
         JackTokenizer jackTokenizer = new JackTokenizer(file);
