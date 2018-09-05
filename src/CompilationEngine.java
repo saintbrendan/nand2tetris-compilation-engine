@@ -1,3 +1,5 @@
+import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -13,6 +15,7 @@ public class CompilationEngine {
     public static final List<KeyWord> TYPES = asList(KeyWord.INT, KeyWord.CHAR, KeyWord.BOOLEAN, KeyWord.VOID);
     public static final List<Character> OPERATORS = asList('+', '-', '*', '/', '&', '|', '<', '>', '=');
     public static final List<Character> UNARY_OPERATORS = asList('-', '~');
+    private SymbolTable symbolTable = new SymbolTable();
     private PrintWriter printWriter;
     private JackTokenizer tokenizer;
 
@@ -47,13 +50,14 @@ public class CompilationEngine {
      */
     private void compileClassVarDec() throws IOException {
         printWriter.println("<classVarDec>");
-        parseKeyword();
+        Kind kind = parseStaticOrField();
         printWriter.flush();
-        compileType();
+        String type = compileType();
         // varName (',' varName)*
         do {
-            //varName
-            parseIdentifier();
+            String classVarName = parseIdentifier();
+            symbolTable.put(classVarName, type, kind);
+            symbolTable.put(classVarName, type, kind);
             if (!isSymbol(',')) {
                 break;
             }
@@ -68,6 +72,7 @@ public class CompilationEngine {
      * ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody
      */
     private void compileSubroutine() throws IOException {
+        symbolTable.startSubroutine();
         printWriter.print("<subroutineDec>\n");
         parseKeyword();
         compileType();
@@ -106,13 +111,17 @@ public class CompilationEngine {
         xmlout("varDec");
         printWriter.flush();
         parseKeyword("var");
-        compileType();
+        String type = compileType();
         do {
             if (tokenizer.tokenType() != TokenType.IDENTIFIER) {
                 error("identifier");
             }
+            String varName = parseIdentifier();
+            symbolTable.put(varName, type, Kind.VAR);
+            /*////
             printWriter.println(tokenizer.toXml());
             tokenizer.advance();
+            ////*/
             if (!isSymbol(',')) {
                 break;
             }
@@ -160,13 +169,14 @@ public class CompilationEngine {
     /**
      * Compiles a type
      */
-    private void compileType() throws IOException {
-        if (isType()) {
-            printWriter.println(tokenizer.toXml());
-            tokenizer.advance();
-            return;
+    private String compileType() throws IOException {
+        if (!isType()) {
+            error("int|char|boolean|void|className");
         }
-        error("int|char|boolean|void|className");
+        String type = tokenizer.stringVal();
+        printWriter.println(tokenizer.toXml());
+        tokenizer.advance();
+        return type;
     }
 
     /**
@@ -179,8 +189,9 @@ public class CompilationEngine {
         printWriter.flush();
         if (isType()) {
             do {
-                compileType();
-                parseIdentifier();
+                String type = compileType();
+                String argName = parseIdentifier();
+                symbolTable.put(argName, type, Kind.ARG);
                 if (tokenizer.tokenType() != TokenType.SYMBOL || (tokenizer.symbol() != ',' && tokenizer.symbol() != ')')) {
                     error("',' or ')'");
                 }
@@ -387,17 +398,27 @@ public class CompilationEngine {
         }
     }
 
-    private void parseKeyword() throws IOException {
-        parseKeyword(tokenizer.stringVal());
+    private Kind parseStaticOrField() throws IOException {
+        KeyWord keyWord = KeyWord.valueOf(parseKeyword().toUpperCase());
+        if (!STATIC_FIELD.contains(keyWord)) {
+            error("static|field");
+        }
+        return Kind.valueOf(keyWord.name());
     }
 
-    private void parseKeyword(String keyword) throws IOException {
+    private String parseKeyword() throws IOException {
+        return parseKeyword(tokenizer.stringVal());
+    }
+
+    private String parseKeyword(String keyword) throws IOException {
+        String stringVal = tokenizer.stringVal();
         if (tokenizer.tokenType() == TokenType.KEYWORD && tokenizer.stringVal().equals(keyword)) {
             printWriter.println(tokenizer.toXml());
         } else {
             error("'" + keyword + "'");
         }
         tokenizer.advance();
+        return stringVal;
     }
 
     private String parseIdentifier() throws IOException {
