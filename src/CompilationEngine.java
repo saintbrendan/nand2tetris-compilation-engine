@@ -61,7 +61,6 @@ public class CompilationEngine {
         do {
             String classVarName = parseIdentifier();
             symbolTable.put(classVarName, type, kind);
-            symbolTable.put(classVarName, type, kind);
             if (!isSymbol(',')) {
                 break;
             }
@@ -78,9 +77,10 @@ public class CompilationEngine {
     private void compileSubroutine() throws IOException {
         symbolTable.startSubroutine();
         whileCount = 0;
+        ifCount = 0;
         printWriter.print("<subroutineDec>\n");
-        parseKeyword();
-        String type = compileType();
+        String subroutineCategory = parseKeyword();
+        String returnType = compileType();
         if (tokenizer.tokenType() != TokenType.IDENTIFIER) {
             error("subroutineName");
         }
@@ -89,14 +89,14 @@ public class CompilationEngine {
         parseSymbol('(');
         compileParameterList();
         parseSymbol(')');
-        compileSubroutineBody();
+        compileSubroutineBody(subroutineCategory);
         printWriter.print("</subroutineDec>\n");
     }
 
     /**
      * '{'  varDec* statements '}'
      */
-    private int compileSubroutineBody() throws IOException {
+    private int compileSubroutineBody(String subroutineCategory) throws IOException {
         printWriter.print("<subroutineBody>\n");
         parseSymbol('{');
         printWriter.flush();
@@ -105,6 +105,19 @@ public class CompilationEngine {
             varCount += compileVarDec();
         }
         vmWriter.function(currentClassName + "." + currentSubroutineName, varCount);
+        if ("constructor".equals(subroutineCategory)) {
+            // push sizeof(this)
+            int sizeofThis = symbolTable.getClassSize();
+            vmWriter.push(Segment.CONSTANT, sizeofThis);
+            // call Memory.alloc 1
+            vmWriter.call("Memory.alloc", 1);
+            // pop pointer 0
+            vmWriter.pop(Segment.POINTER, 0);
+        } else if ("method".equals(subroutineCategory)) {
+            // This = argument 0
+            vmWriter.push(Segment.ARGUMENT, 0);
+            vmWriter.pop(Segment.POINTER, 0);
+        }
         compileStatements();
         parseSymbol('}');
         printWriter.print("</subroutineBody>\n");
@@ -277,7 +290,6 @@ public class CompilationEngine {
         vmWriter.gotoo(whileExpression);
         vmWriter.label(end);
         printWriter.print("</whileStatement>\n");
-        whileCount--;
     }
 
     /**
@@ -301,17 +313,18 @@ public class CompilationEngine {
         parseSymbol('{');
         compileStatements();
         parseSymbol('}');
-        vmWriter.gotoo(end);
-        vmWriter.label(ifFalse);
         if (isKeyword("else")) {
+            vmWriter.gotoo(end);
+            vmWriter.label(ifFalse);
             parseKeyword("else");
             parseSymbol('{');
             compileStatements();
             parseSymbol('}');
+            vmWriter.label(end);
+        } else {
+            vmWriter.label(ifFalse);
         }
-        vmWriter.label(end);
         printWriter.println("</ifStatement>");
-        ifCount--;
     }
 
     /**
@@ -392,17 +405,42 @@ public class CompilationEngine {
 
     public void compileSubroutineCall(String identifier) throws IOException {
         // identifier already parsed
-        String subroutineName = identifier;
+        String instanceName = null;
+        String className = identifier;
+        String subroutineName;
         if (isSymbol('.')) {
             parseSymbol('.');
             String memberSubroutineName = parseIdentifier();
-            subroutineName += "." + memberSubroutineName;
+            if (symbolTable.contains(identifier)) {
+                instanceName = identifier;
+                className = symbolTable.typeOf(identifier);
+            }
+            subroutineName = className + "." + memberSubroutineName;
+        } else {
+            subroutineName = currentClassName + "." + identifier;
+            instanceName = "this";
         }
         parseSymbol('(');
         int parameterCount = compileExpressionList();
         // compile ExpressionList should have left the expressions on the stack
+        if (instanceName != null) {
+            push(instanceName);
+            parameterCount++;
+        }
         vmWriter.call(subroutineName, parameterCount);
         parseSymbol(')');
+    }
+
+    private void push(String instanceName) {
+        if ("this".equals(instanceName)) {
+            // push this
+            vmWriter.push(Segment.POINTER, 0);
+        } else {
+            // push instance
+            int index = symbolTable.indexOf(instanceName);
+            Segment segment = Segment.segmentOf(symbolTable.kindOf(instanceName));
+            vmWriter.push(segment, index);
+        }
     }
 
     private int compileExpressionList() throws IOException {
@@ -549,6 +587,8 @@ public class CompilationEngine {
                     } else if ("true".equals(tokenString)) {
                         vmWriter.push(Segment.CONSTANT, 0);
                         vmWriter.arithmetic('~');
+                    } else if ("this".equals(tokenString)) {
+                        vmWriter.push(Segment.POINTER, 0);
                     }
                 } else {
                     error("true|false|null");

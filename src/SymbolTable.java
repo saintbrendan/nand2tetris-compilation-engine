@@ -9,6 +9,11 @@ public class SymbolTable {
     Map<Kind, Integer> methodIndexes = new EnumMap<Kind, Integer>(Kind.class);
 
     public SymbolTable() {}
+
+    public int getClassSize() {
+        return (int)classSymbols.values().stream().filter(symbol -> symbol.kind == Kind.FIELD).count();
+    }
+
     public void put(String name, String type, Kind kind) {
         Map<String, Symbol> symbols;
         Map<Kind, Integer> indexes;
@@ -58,7 +63,13 @@ public class SymbolTable {
         if (symbol == null) {
             symbol = classSymbols.get(name);
         }
+        if (symbol == null) {
+            throw new NullPointerException(name + " should not be null");
+        }
         return symbol.index;
+    }
+    public boolean contains(String identifier) {
+        return classSymbols.containsKey(identifier) || (methodSymbols != null && methodSymbols.containsKey(identifier));
     }
     private static class Symbol {
         String name;
