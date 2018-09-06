@@ -33,10 +33,6 @@ public class JackTokenizer {
         xmlFromType = Collections.unmodifiableMap(map);
     }
 
-    public void pushBack() {
-        tokenizer.pushBack();
-    }
-
     public JackTokenizer(File file) throws FileNotFoundException {
         Reader reader = new FileReader(file);
         this.tokenizer = tokenizerOf(reader);

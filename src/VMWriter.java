@@ -9,7 +9,6 @@ public class VMWriter {
         Map<Character, String> aMap = new HashMap<>();
         aMap.put('+',"add");
         aMap.put('-',"sub");
-        aMap.put('-',"neg");
         aMap.put('=',"eq");
         aMap.put('>',"gt");
         aMap.put('<',"lt");
@@ -32,6 +31,14 @@ public class VMWriter {
     void arithmetic(char op) {
         writer.println(cmdFromOp.get(op));
     }
+    void unaryOp(char op) {
+        if (op == '-') {
+            writer.println("neg");
+        } else {
+            writer.println("not");
+        }
+        /// TODO throw exception if not '~' or '-'
+    }
     void label (String label) {
         writer.println("label " + label);
     }
@@ -49,6 +56,9 @@ public class VMWriter {
     }
     void ret() {
         writer.println("return");
+    }
+    void flush() {
+        writer.flush();
     }
     void close() {
         writer.flush();

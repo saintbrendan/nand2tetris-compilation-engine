@@ -4,26 +4,41 @@ import java.util.Map;
 
 public class SymbolTable {
     Map<String, Symbol> classSymbols = new HashMap<>();
+    Map<Kind, Integer> classIndexes = new EnumMap<Kind, Integer>(Kind.class);
     Map<String, Symbol> methodSymbols = null;
-    Map<Kind, Integer> indexes = new EnumMap<Kind, Integer>(Kind.class);
+    Map<Kind, Integer> methodIndexes = new EnumMap<Kind, Integer>(Kind.class);
 
     public SymbolTable() {}
     public void put(String name, String type, Kind kind) {
-        if (methodSymbols != null) {
+        Map<String, Symbol> symbols;
+        Map<Kind, Integer> indexes;
 
+        if (methodSymbols == null) {
+            // class symbols
+            symbols = classSymbols;
+            indexes = classIndexes;
         } else {
-            int index = indexes.getOrDefault(kind, 0);
-            classSymbols.put(name, new Symbol(name, type, kind, index));
-            indexes.put(kind, index + 1);
+            symbols = methodSymbols;
+            indexes = methodIndexes;
         }
+        int index = indexes.getOrDefault(kind, 0);
+        symbols.put(name, new Symbol(name, type, kind, index));
+        indexes.put(kind, index + 1);
     }
+
     public void startSubroutine() {
         methodSymbols = new HashMap<>();
-        indexes = new EnumMap<Kind, Integer>(Kind.class);
+        methodIndexes = new EnumMap<Kind, Integer>(Kind.class);
     }
     public int varCount(Kind kind) {
-        return indexes.getOrDefault(kind, 0);
+        if (methodIndexes != null) {
+            if (methodIndexes.containsKey(kind)) {
+                return methodIndexes.get(kind);
+            }
+        }
+        return classIndexes.getOrDefault(kind, 0);
     }
+
     public Kind kindOf(String name) {
         Symbol symbol = methodSymbols.get(name);
         if (symbol == null) {

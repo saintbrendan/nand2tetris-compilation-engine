@@ -19,6 +19,8 @@ public class CompilationEngine {
     private JackTokenizer tokenizer;
     private String currentClassName = "";
     private String currentSubroutineName = "";
+    private int whileCount = 0;
+    private int ifCount = 0;
 
     /**
      * class: 'class' className '{' classVarDec* subroutineDec* '}'
@@ -75,6 +77,7 @@ public class CompilationEngine {
      */
     private void compileSubroutine() throws IOException {
         symbolTable.startSubroutine();
+        whileCount = 0;
         printWriter.print("<subroutineDec>\n");
         parseKeyword();
         String type = compileType();
@@ -99,7 +102,7 @@ public class CompilationEngine {
         printWriter.flush();
         int varCount = 0;
         while (isKeyword("var")) {
-            varCount = compileVarDec();
+            varCount += compileVarDec();
         }
         vmWriter.function(currentClassName + "." + currentSubroutineName, varCount);
         compileStatements();
@@ -143,7 +146,7 @@ public class CompilationEngine {
                     compileLet();
                     break;
                 case WHILE:
-                    compilesWhile();
+                    compileWhile();
                     break;
                 case IF:
                     compileIf();
@@ -219,6 +222,7 @@ public class CompilationEngine {
         parseKeyword("do");
         String identifier = parseIdentifier();
         compileSubroutineCall(identifier);
+        vmWriter.pop(Segment.TEMP, 0);
         parseSymbol(';');
         printWriter.print("</doStatement>\n");
     }
@@ -233,7 +237,7 @@ public class CompilationEngine {
         if (tokenizer.tokenType() != TokenType.IDENTIFIER) {
             error("varName");
         }
-        parseIdentifier();
+        String varName = parseIdentifier();
         //'[' or '='
         if (!(isSymbol('[') || isSymbol('='))) {
             error(" '[' | '=' ");
@@ -245,6 +249,9 @@ public class CompilationEngine {
         }
         parseSymbol('=');
         compileExpression();
+        int index = symbolTable.indexOf(varName);
+        Segment segment = Segment.segmentOf(symbolTable.kindOf(varName));
+        vmWriter.pop(segment, index);
         parseSymbol(';');
         printWriter.print("</letStatement>\n");
     }
@@ -252,38 +259,59 @@ public class CompilationEngine {
     /**
      * 'while' '(' expression ')' '{' statements '}'
      */
-    private void compilesWhile() throws IOException {
+    private void compileWhile() throws IOException {
+        String whileExpression = "WHILE_EXP" + whileCount;
+        String end = "WHILE_END" + whileCount;
+        whileCount++;
         printWriter.print("<whileStatement>\n");
         parseKeyword("while");
+        vmWriter.label(whileExpression);
         parseSymbol('(');
         compileExpression();
         parseSymbol(')');
+        vmWriter.arithmetic('~');
+        vmWriter.ifg(end);
         parseSymbol('{');
         compileStatements();
         parseSymbol('}');
+        vmWriter.gotoo(whileExpression);
+        vmWriter.label(end);
         printWriter.print("</whileStatement>\n");
+        whileCount--;
     }
 
     /**
      * 'if' '(' expression ')' '{' statements '}' ('else' '{' statements '}')?
      */
     private void compileIf() throws IOException {
+        String ifTrue = "IF_TRUE" + ifCount;
+        String ifFalse = "IF_FALSE" + ifCount;
+        String end = "IF_END" + ifCount;
+        ifCount++;
         printWriter.println("<ifStatement>");
         parseKeyword("if");
         parseSymbol('(');
+        vmWriter.flush();
         compileExpression();
-        printWriter.flush();
+        vmWriter.flush();
         parseSymbol(')');
+        vmWriter.ifg(ifTrue);
+        vmWriter.gotoo(ifFalse);
+        vmWriter.label(ifTrue);
         parseSymbol('{');
         compileStatements();
         parseSymbol('}');
+        vmWriter.gotoo(end);
+        vmWriter.label(ifFalse);
         if (isKeyword("else")) {
             parseKeyword("else");
             parseSymbol('{');
             compileStatements();
             parseSymbol('}');
         }
+        vmWriter.label(end);
         printWriter.println("</ifStatement>");
+        ifCount--;
     }
 
     /**
@@ -331,8 +359,9 @@ public class CompilationEngine {
         if (isConstant()) {
             parseConstant();
         } else if (isUnaryOp()){
-            parseSymbol();
+            char unaryOp = parseSymbol();
             compileTerm();
+            vmWriter.unaryOp(unaryOp);
         } else if (isSymbol('(')) {
             parseSymbol('(');
             compileExpression();
@@ -351,6 +380,11 @@ public class CompilationEngine {
                 parseSymbol(']');
             } else if (isSymbol('.') || isSymbol('(')) {
                 compileSubroutineCall(identifier);
+            } else {
+                // straight variable
+                int index = symbolTable.indexOf(identifier);
+                Segment segment = Segment.segmentOf(symbolTable.kindOf(identifier));
+                vmWriter.push(segment, index);
             }
         }
         xmlout("/term");
@@ -368,7 +402,6 @@ public class CompilationEngine {
         int parameterCount = compileExpressionList();
         // compile ExpressionList should have left the expressions on the stack
         vmWriter.call(subroutineName, parameterCount);
-        vmWriter.pop(Segment.TEMP, 0);
         parseSymbol(')');
     }
 
@@ -398,17 +431,18 @@ public class CompilationEngine {
         return op;
     }
 
-    private void parseSymbol() throws IOException {
-        parseSymbol(tokenizer.symbol());
+    private char parseSymbol() throws IOException {
+        return parseSymbol(tokenizer.symbol());
     }
 
-    private void parseSymbol(char symbol) throws IOException {
+    private char parseSymbol(char symbol) throws IOException {
         if (tokenizer.tokenType() == TokenType.SYMBOL && tokenizer.symbol() == symbol) {
             printWriter.println(tokenizer.toXml());
         } else {
             error("'" + symbol + "'");
         }
         tokenizer.advance();
+        return symbol;
     }
 
     private void parseStringConstant() {
@@ -493,6 +527,7 @@ public class CompilationEngine {
     }
 
     private void parseConstant() throws IOException {
+        String tokenString = tokenizer.stringVal();
         switch (tokenizer.tokenType()) {
             case INT_CONST:
                 vmWriter.push(Segment.CONSTANT, (int) tokenizer.intVal());
@@ -501,14 +536,20 @@ public class CompilationEngine {
                 /// construct and push string constant
                 break;
             case KEYWORD:
-                if (KEYWORD_CONSTANTS.contains(tokenizer.stringVal())) {
-                    /*/// TODO
+                if (KEYWORD_CONSTANTS.contains(tokenString)) {
+                    /*
                     null	constant 0
                     false	constant 0
                     true	constant -1
-                            push constant 1
-                            neg
-                     ///*/
+                            push constant 0
+                            not
+                    */
+                    if ("false".equals(tokenString) || "null".equals(tokenString)) {
+                        vmWriter.push(Segment.CONSTANT, 0);
+                    } else if ("true".equals(tokenString)) {
+                        vmWriter.push(Segment.CONSTANT, 0);
+                        vmWriter.arithmetic('~');
+                    }
                 } else {
                     error("true|false|null");
                 }

@@ -2,7 +2,7 @@ import java.io.File;
 import java.io.IOException;
 
 public class JackCompiler {
-    public static String fileName = "C:\\temp\\11\\Seven";
+    public static String fileName = "C:\\temp\\11\\ConvertToBin";
     //public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\";
 
     public static void main(String[] args) throws IOException {
