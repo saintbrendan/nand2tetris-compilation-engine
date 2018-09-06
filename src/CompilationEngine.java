@@ -1,5 +1,3 @@
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
-
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -17,7 +15,10 @@ public class CompilationEngine {
     public static final List<Character> UNARY_OPERATORS = asList('-', '~');
     private SymbolTable symbolTable = new SymbolTable();
     private PrintWriter printWriter;
+    private VMWriter vmWriter;
     private JackTokenizer tokenizer;
+    private String currentClassName = "";
+    private String currentSubroutineName = "";
 
     /**
      * class: 'class' className '{' classVarDec* subroutineDec* '}'
@@ -27,7 +28,7 @@ public class CompilationEngine {
         tokenizer.advance();
         printWriter.println("<class>");
         parseKeyword("class");
-        parseIdentifier();
+        currentClassName = parseIdentifier();
         parseSymbol('{');
         while (STATIC_FIELD.contains(tokenizer.keyWord())) {
             compileClassVarDec();
@@ -42,6 +43,7 @@ public class CompilationEngine {
         }
         printWriter.println("</class>");
         printWriter.close();
+        vmWriter.close();
     }
 
     /**
@@ -75,11 +77,11 @@ public class CompilationEngine {
         symbolTable.startSubroutine();
         printWriter.print("<subroutineDec>\n");
         parseKeyword();
-        compileType();
+        String type = compileType();
         if (tokenizer.tokenType() != TokenType.IDENTIFIER) {
             error("subroutineName");
         }
-        parseIdentifier();
+        currentSubroutineName = parseIdentifier();
         printWriter.flush();
         parseSymbol('(');
         compileParameterList();
@@ -91,23 +93,27 @@ public class CompilationEngine {
     /**
      * '{'  varDec* statements '}'
      */
-    private void compileSubroutineBody() throws IOException {
+    private int compileSubroutineBody() throws IOException {
         printWriter.print("<subroutineBody>\n");
         parseSymbol('{');
         printWriter.flush();
+        int varCount = 0;
         while (isKeyword("var")) {
-            compileVarDec();
+            varCount = compileVarDec();
         }
+        vmWriter.function(currentClassName + "." + currentSubroutineName, varCount);
         compileStatements();
         parseSymbol('}');
         printWriter.print("</subroutineBody>\n");
+        return varCount;
     }
 
     /**
      * Compiles a var declaration
      * 'var' type varName (',' varName)*;
      */
-    public void compileVarDec() throws IOException {
+    public int compileVarDec() throws IOException {
+        int varCount = 0;
         xmlout("varDec");
         printWriter.flush();
         parseKeyword("var");
@@ -118,10 +124,7 @@ public class CompilationEngine {
             }
             String varName = parseIdentifier();
             symbolTable.put(varName, type, Kind.VAR);
-            /*////
-            printWriter.println(tokenizer.toXml());
-            tokenizer.advance();
-            ////*/
+            varCount++;
             if (!isSymbol(',')) {
                 break;
             }
@@ -129,6 +132,7 @@ public class CompilationEngine {
         } while (true);
         parseSymbol(';');
         xmlout("/varDec");
+        return varCount;
     }
 
     public void compileStatements() throws IOException {
@@ -157,10 +161,12 @@ public class CompilationEngine {
         xmlout("/statements");
     }
 
-    public CompilationEngine(File inFile, File outFile) {
+    public CompilationEngine(File inFile, File outFile, File outVmFile) {
         try {
             tokenizer = new JackTokenizer(inFile);
             printWriter = new PrintWriter(outFile);
+            PrintWriter writer = new PrintWriter(outVmFile);
+            vmWriter = new VMWriter(writer);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -288,8 +294,12 @@ public class CompilationEngine {
         parseKeyword("return");
         if (!isSymbol(';')) {
             compileExpression();
+        } else {
+            // Not returning anything.  Must be void.  So push 0.
+            vmWriter.push(Segment.CONSTANT, 0);
         }
         parseSymbol(';');
+        vmWriter.ret();
         printWriter.println("</returnStatement>");
     }
 
@@ -300,8 +310,18 @@ public class CompilationEngine {
         printWriter.println("<expression>");
         compileTerm();
         while (isOp()) {
-            compileOp();
+            char op = compileOp();
             compileTerm();
+            switch (op) {
+                case '*':
+                    vmWriter.call("Math.multiply", 2);
+                    break;
+                case '/':
+                    vmWriter.call("Math.divide 2", 2);
+                    break;
+                default:
+                    vmWriter.arithmetic(op);
+            }
         }
         printWriter.println("</expression>");
     }
@@ -309,8 +329,7 @@ public class CompilationEngine {
     private void compileTerm() throws IOException {
         xmlout("term");
         if (isConstant()) {
-            printWriter.println(tokenizer.toXml());
-            tokenizer.advance();
+            parseConstant();
         } else if (isUnaryOp()){
             parseSymbol();
             compileTerm();
@@ -339,33 +358,44 @@ public class CompilationEngine {
 
     public void compileSubroutineCall(String identifier) throws IOException {
         // identifier already parsed
+        String subroutineName = identifier;
         if (isSymbol('.')) {
             parseSymbol('.');
-            parseIdentifier();
+            String memberSubroutineName = parseIdentifier();
+            subroutineName += "." + memberSubroutineName;
         }
         parseSymbol('(');
-        compileExpressionList();
+        int parameterCount = compileExpressionList();
+        // compile ExpressionList should have left the expressions on the stack
+        vmWriter.call(subroutineName, parameterCount);
+        vmWriter.pop(Segment.TEMP, 0);
         parseSymbol(')');
     }
 
-    private void compileExpressionList() throws IOException {
+    private int compileExpressionList() throws IOException {
+        int expressionCount = 0;
         xmlout("expressionList");
         if (!isSymbol(')')) {  // This is kinda kludgy.  Depends on ExpressionList always being in parens
             compileExpression();
+            expressionCount++;
             while (isSymbol(',')) {
                 parseSymbol(',');
                 compileExpression();
+                expressionCount++;
             }
         }
         xmlout("/expressionList");
+        return expressionCount;
     }
 
-    private void compileOp() throws IOException {
+    private char compileOp() throws IOException {
+        char op = tokenizer.symbol();
         if (isOp()) {
             parseSymbol();
         } else {
             error("'+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '='");
         }
+        return op;
     }
 
     private void parseSymbol() throws IOException {
@@ -460,6 +490,33 @@ public class CompilationEngine {
             return true;
         }
         return false;
+    }
+
+    private void parseConstant() throws IOException {
+        switch (tokenizer.tokenType()) {
+            case INT_CONST:
+                vmWriter.push(Segment.CONSTANT, (int) tokenizer.intVal());
+                break;
+            case STRING_CONST:
+                /// construct and push string constant
+                break;
+            case KEYWORD:
+                if (KEYWORD_CONSTANTS.contains(tokenizer.stringVal())) {
+                    /*/// TODO
+                    null	constant 0
+                    false	constant 0
+                    true	constant -1
+                            push constant 1
+                            neg
+                     ///*/
+                } else {
+                    error("true|false|null");
+                }
+                break;
+            default:
+                error("int constant | String constant | true | false | null");
+        }
+        tokenizer.advance();
     }
 
     private boolean isConstant() {

@@ -1,9 +1,9 @@
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
 
-public class JackAnalyzer {
-    public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\";
+public class JackCompiler {
+    public static String fileName = "C:\\temp\\11\\Seven";
+    //public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\";
 
     public static void main(String[] args) throws IOException {
         if (args.length >= 1) {

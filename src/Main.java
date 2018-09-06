@@ -1,7 +1,6 @@
 import java.io.*;
 public class Main {
-    ////public static String fileName = "C:\\Users\\saint\\OneDrive\\Documents\\nand2tetris\\projects\\10\\Square\\SquareGame.jack";
-
+    public static String fileName = "C:\\Users\\saint\\IdeaProjects\\CompilationEngine\\out\\production\\CompilationEngine\\";
 
     public static void main(String[] args) throws IOException {
         if (args.length >= 1) {
@@ -10,7 +9,7 @@ public class Main {
         File file = new File(JackTokenizer.fileName);
         Reader reader = new FileReader(file);
 
-        StreamTokenizer streamTokenizer = JackTokenizer.tokenizerFromReader(reader);
+        StreamTokenizer streamTokenizer = JackTokenizer.tokenizerOf(reader);
         while(streamTokenizer.nextToken() != StreamTokenizer.TT_EOF){
 
             if(streamTokenizer.ttype == StreamTokenizer.TT_WORD) {
@@ -22,13 +21,7 @@ public class Main {
             } else {
                 System.out.println("xxx"+Character.toString((char)streamTokenizer.ttype));
             }
-
         }
-
-
-
-
     }
-
 
 }

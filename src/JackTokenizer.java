@@ -39,7 +39,7 @@ public class JackTokenizer {
 
     public JackTokenizer(File file) throws FileNotFoundException {
         Reader reader = new FileReader(file);
-        this.tokenizer = tokenizerFromReader(reader);
+        this.tokenizer = tokenizerOf(reader);
     }
 
     public String stringVal() {
@@ -151,7 +151,7 @@ public class JackTokenizer {
         return "<" + xmlElement + "> " + xmlString + " </" + xmlElement + ">";
     }
 
-    public static StreamTokenizer tokenizerFromReader(Reader reader) {
+    public static StreamTokenizer tokenizerOf(Reader reader) {
         StreamTokenizer tokenizer = new StreamTokenizer(reader);
         // ignore
         tokenizer.slashSlashComments(true);
