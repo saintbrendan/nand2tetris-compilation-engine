@@ -245,6 +245,7 @@ public class CompilationEngine {
      * 'let' varName ('[' expression ']')? '=' expression ';'
      */
     private void compileLet() throws IOException {
+        boolean lvalueIsArraySubscript = false;
         printWriter.print("<letStatement>\n");
         parseKeyword("let");
         if (tokenizer.tokenType() != TokenType.IDENTIFIER) {
@@ -256,15 +257,27 @@ public class CompilationEngine {
             error(" '[' | '=' ");
         }
         if (isSymbol('[')) {
+            lvalueIsArraySubscript = true;
             parseSymbol('[');
             compileExpression();
             parseSymbol(']');
+            push(varName);
+            vmWriter.arithmetic('+');
         }
         parseSymbol('=');
         compileExpression();
-        int index = symbolTable.indexOf(varName);
-        Segment segment = Segment.segmentOf(symbolTable.kindOf(varName));
-        vmWriter.pop(segment, index);
+//        int index = symbolTable.indexOf(varName);
+//        Segment segment = Segment.segmentOf(symbolTable.kindOf(varName));
+//        vmWriter.pop(segment, index);
+        if (lvalueIsArraySubscript) {
+            vmWriter.pop(Segment.TEMP, 0); // TEMP[0] will eventually be assigned to the lvalue
+            vmWriter.pop(Segment.POINTER, 1); // THAT = address of lvalue that you left on stack earlier
+            // THAT[0] = TEMP[0]
+            vmWriter.push(Segment.TEMP, 0);
+            vmWriter.pop(Segment.THAT, 0);
+        } else {
+            pop(varName);
+        }
         parseSymbol(';');
         printWriter.print("</letStatement>\n");
     }
@@ -358,7 +371,7 @@ public class CompilationEngine {
                     vmWriter.call("Math.multiply", 2);
                     break;
                 case '/':
-                    vmWriter.call("Math.divide 2", 2);
+                    vmWriter.call("Math.divide", 2);
                     break;
                 default:
                     vmWriter.arithmetic(op);
@@ -391,6 +404,11 @@ public class CompilationEngine {
                 parseSymbol('[');
                 compileExpression();
                 parseSymbol(']');
+                push(identifier);
+                vmWriter.arithmetic('+');
+                vmWriter.pop(Segment.POINTER, 1);   // THAT points to a[i]
+                vmWriter.push(Segment.THAT, 0);      // value of a[i] now on top of stack
+                vmWriter.flush();
             } else if (isSymbol('.') || isSymbol('(')) {
                 compileSubroutineCall(identifier);
             } else {
@@ -429,6 +447,12 @@ public class CompilationEngine {
         }
         vmWriter.call(subroutineName, parameterCount);
         parseSymbol(')');
+    }
+
+    private void pop(String varName) {
+        int index = symbolTable.indexOf(varName);
+        Segment segment = Segment.segmentOf(symbolTable.kindOf(varName));
+        vmWriter.pop(segment, index);
     }
 
     private void push(String instanceName) {
@@ -571,7 +595,14 @@ public class CompilationEngine {
                 vmWriter.push(Segment.CONSTANT, (int) tokenizer.intVal());
                 break;
             case STRING_CONST:
-                /// construct and push string constant
+                // construct and push string constant
+                // push length
+                vmWriter.push(Segment.CONSTANT, tokenString.length());
+                vmWriter.call("String.new", 1);
+                for (int i = 0; i < tokenString.length(); i++) {
+                    vmWriter.push(Segment.CONSTANT, tokenString.charAt(i));
+                    vmWriter.call("String.appendChar", 2);
+                }
                 break;
             case KEYWORD:
                 if (KEYWORD_CONSTANTS.contains(tokenString)) {
